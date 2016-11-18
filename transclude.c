@@ -22,6 +22,17 @@
 #endif
 
 
+/* Windows can use either `\` or `/` as a separator -- thanks to t-beckmann on github
+	for suggesting a fix for this. */
+
+bool is_separator(char c) {
+#if defined(__WIN32)
+	return c == '\\' || c == '/';
+#else
+	return c == '/';
+#endif
+}
+
 /* Combine directory and filename to create a full path */
 char * path_from_dir_base(char *dir, char *base) {
 #if defined(__WIN32)
@@ -32,13 +43,13 @@ char * path_from_dir_base(char *dir, char *base) {
 	GString *path = NULL;
 	char *result;
 
-	if ((base != NULL) && (base[0] == sep)) {
+	if ((base != NULL) && (is_separator(base[0]))) {
 		path = g_string_new(base);
 	} else {
 		path = g_string_new(dir);
 
 		/* Ensure that folder ends in "/" */
-		if (!(path->str[strlen(path->str)-1] == sep) ) {
+		if (!is_separator(path->str[strlen(path->str)-1]) ) {
 			g_string_append_c(path, sep);
 		}
 
@@ -49,6 +60,22 @@ char * path_from_dir_base(char *dir, char *base) {
 	g_string_free(path, false);
 
 	return result;
+}
+
+/* Separate filename and directory from a full path */
+/* See http://stackoverflow.com/questions/1575278/function-to-split-a-filepath-into-path-and-file */
+void split_path_file(char** dir, char** file, char *path) {
+    char *slash = path, *next;
+#if defined(__WIN32)
+	const char sep[] = "\\/";	// Windows allows either variant
+#else
+	const char sep[] = "/";
+#endif
+
+    while ((next = strpbrk(slash + 1, sep))) slash = next;
+    if (path != slash) slash++;
+    *dir = my_strndup(path, slash - path);
+    *file = strdup(slash);
 }
 
 /* Return pointer to beginning of text without metadata */
@@ -81,7 +108,7 @@ char * source_without_metadata(char * source, unsigned long extensions ) {
 	Pass the path to the current folder if available -- should be a full path. 
 
 	Keep track of what we're parsing to prevent recursion using stack. */
-void transclude_source(GString *source, char *basedir, char *stack, int output_format) {
+void transclude_source(GString *source, char *basedir, char *stack, int output_format, GString *manifest) {
 	char *base = NULL;
 	char *path = NULL;
 	char *start;
@@ -91,6 +118,7 @@ void transclude_source(GString *source, char *basedir, char *stack, int output_f
 	size_t pos;
 	char real[1000];
 	FILE *input;
+	long offset;
 
 	if (basedir == NULL) {
 		base = strdup("");
@@ -143,8 +171,19 @@ void transclude_source(GString *source, char *basedir, char *stack, int output_f
 			strncpy(real,start+2,stop-start-2);
 			real[stop-start-2] = '\0';
 
-			filename = g_string_new(folder->str);
-			g_string_append_printf(filename, "%s",real);
+			if (is_separator(real[0])) {
+				filename = g_string_new(real);
+			} else {
+				filename = g_string_new(folder->str);
+				g_string_append_printf(filename, "%s",real);
+			}
+
+			if (strcmp(filename->str,"./TOC") == 0) {
+				pos = stop - source->str;
+				start = strstr(source->str + pos,"{{");
+				g_string_free(filename, true);
+				continue;
+			}
 
 			/* Adjust for wildcard extensions */
 			/* But not if output_format == 0 */
@@ -175,6 +214,21 @@ void transclude_source(GString *source, char *basedir, char *stack, int output_f
 			}
 
 			pos = stop - source->str;
+
+			/* Add to the manifest (if not already included) */
+			if (manifest != NULL) {
+				temp = strstr(manifest->str,filename->str);
+
+				offset = temp - manifest->str;
+				if ((temp != NULL) &&
+					((temp == manifest->str) || ((manifest->str)[offset - 1] == '\n')) &&
+					(temp[strlen(filename->str)] == '\n') ){
+					/* Already on manifest, so don't add again */
+				} else {
+					g_string_append_printf(manifest,"%s\n",filename->str);
+				}
+			}
+
 
 			/* Don't reparse ourselves */
 			if (stack != NULL) {
@@ -214,8 +268,18 @@ void transclude_source(GString *source, char *basedir, char *stack, int output_f
 
 
 				/* Recursively transclude files */
-				transclude_source(filebuffer, folder->str, stackstring->str, output_format);
 
+				/* We want to reset the base directory if we enter a subdirectory */
+				char * new_dir;
+				char * file_only;
+				split_path_file(&new_dir, &file_only, filename->str);
+
+				/* transclude_source(filebuffer, folder->str, stackstring->str, output_format, manifest); */
+				transclude_source(filebuffer, new_dir, stackstring->str, output_format, manifest);
+
+				free(new_dir);
+				free(file_only);
+				
 				temp = source_without_metadata(filebuffer->str, 0x000000);
 
 				g_string_insert(source, pos, temp);
@@ -243,11 +307,27 @@ void transclude_source(GString *source, char *basedir, char *stack, int output_f
 /* Allow for a footer to specify files to be appended to the end of the text, and then transcluded.
 	Useful for appending a list of footnotes, citations, abbreviations, etc. to each separate file,
 	but not including multiple copies when processing the master file. */
-void append_mmd_footers(GString *source) {
+void append_mmd_footer(GString *source) {
 	/* Look for mmd_footer metadata */
 	if (has_metadata(source->str, 0x000000)) {
 		char *meta = extract_metadata_value(source->str, 0x000000, "mmdfooter");
 		if (meta != NULL)
-			g_string_append_printf(source, "\n\n{{%s}}\n",meta);
+			g_string_append_printf(source, "\n\n{{%s}}\n", meta);
+	}
+}
+
+void prepend_mmd_header(GString *source) {
+	/* Same thing, but to be inserted after metadata and before content */
+	if (has_metadata(source->str, 0x000000)) {
+		char *meta = extract_metadata_value(source->str, 0x000000, "mmdheader");
+		if (meta != NULL) {
+			char *content = strstr(source->str, "\n\n");
+			if (content != NULL) {
+				size_t pos = content - source->str;
+				g_string_insert_printf(source, pos, "\n\n{{%s}}", meta);
+			} else {
+				g_string_append_printf(source, "\n\n{{%s}}\n", meta);
+			}
+		}
 	}
 }

@@ -3,7 +3,7 @@
 	parser.leg -> parser.c -- Parse (Multi)Markdown plain text for
 		conversion into other formats
 	
-	(c) 2013 Fletcher T. Penney (http://fletcherpenney.net/).
+	(c) 2013-2015 Fletcher T. Penney (http://fletcherpenney.net/).
 
 	Derived from peg-multimarkdown, which was forked from peg-markdown,
 	which is (c) 2008 John MacFarlane (jgm at berkeley dot edu), and 
@@ -45,6 +45,7 @@ int main(int argc, char **argv)
 	static int process_html_flag = 0;
 	static int random_footnotes_flag = 0;
 	bool list_meta_keys = 0;
+	bool list_transclude_manifest = 0;
 	char *target_meta_key = FALSE;
 		
 	static struct option long_options[] = {
@@ -71,10 +72,12 @@ int main(int argc, char **argv)
 		{"extract", required_argument, 0, 'e'},                              /* show value of specified metadata */
 		{"version", no_argument, 0, 'v'},                                    /* display version information */
 		{"help", no_argument, 0, 'h'},                                       /* display usage information */
+		{"manifest", no_argument, 0, 'x'},                                   /* List all transcluded files */
 		{NULL, 0, NULL, 0}
 	};
 	
 	GString *inputbuf;
+	GString *manifest;
 	FILE *input;
 	FILE *output;
 	int curchar;
@@ -83,7 +86,7 @@ int main(int argc, char **argv)
 	char *out;
 	
 	/* set up my data for the parser */
-	int output_format = 0;
+	int output_format = HTML_FORMAT;	/* Default output format unless specified otherwise */
 	unsigned long extensions = 0;
 	extensions = extensions | EXT_SMART | EXT_NOTES | EXT_OBFUSCATE;
 	
@@ -91,7 +94,7 @@ int main(int argc, char **argv)
 	while (1) {
 		int option_index = 0;
 
-		c = getopt_long (argc, argv, "vhco:bfst:me:ar", long_options, &option_index);
+		c = getopt_long (argc, argv, "vhco:bfst:me:arx", long_options, &option_index);
 		
 		if (c == -1)
 			break;
@@ -137,6 +140,7 @@ int main(int argc, char **argv)
 				"    --process-html         Process Markdown inside of raw HTML\n"
 				"    -m, --metadata-keys    List all metadata keys\n"
 				"    -e, --extract          Extract specified metadata\n"
+				"    -x, --manifest         Show manifest of all transcluded files\n"
 				"    --random               Use random numbers for footnote anchors\n"
 				"\n"
 				"    -a, --accept           Accept all CriticMarkup changes\n"
@@ -148,7 +152,7 @@ int main(int argc, char **argv)
 				"    --mask, --nomask       Mask email addresses in HTML\n"
 				"    --escaped-line-breaks  Enable escaped line breaks\n"
 
-				"\nAvailable FORMATs: html(default), latex, beamer, memoir, odf, opml, lyx\n\n"
+				"\nAvailable FORMATs: html(default), latex, beamer, memoir, odf, opml, lyx, mmd\n\n"
 				"NOTE: The lyx output format was created by Charles R. Cowan, and \n\tis provided as is.\n\n\n"
 				);
 				return(EXIT_SUCCESS);
@@ -172,6 +176,8 @@ int main(int argc, char **argv)
 					output_format = RTF_FORMAT;
 				else if (strcmp(optarg, "lyx") == 0)
 					output_format = LYX_FORMAT;
+				else if (strcmp(optarg, "mmd") == 0)
+					output_format = ORIGINAL_FORMAT;
 				else {
 					/* no valid format specified */
 					fprintf(stderr, "%s: Unknown output format '%s'\n",argv[0], optarg);
@@ -206,6 +212,10 @@ int main(int argc, char **argv)
 				extensions = extensions | EXT_CRITIC_REJECT;
 				break;
 			
+			case 'x':	/* List transcluded files */
+				list_transclude_manifest = 1;
+				break;
+
 			default:
 			fprintf(stderr,"Error parsing options.\n");
 			abort();
@@ -278,6 +288,7 @@ int main(int argc, char **argv)
 		
 		for (i = 0; i < numargs; i++) {
 			inputbuf = g_string_new("");
+			manifest = g_string_new("");
 			char *temp = NULL;
 			char *folder = NULL;
 
@@ -319,15 +330,31 @@ int main(int argc, char **argv)
 			if (!(extensions & EXT_COMPATIBILITY)) {
 				temp = strdup(argv[i+1]);
 				folder = dirname(temp);
-				append_mmd_footers(inputbuf);
-				transclude_source(inputbuf, folder, NULL, output_format);
+				prepend_mmd_header(inputbuf);
+				append_mmd_footer(inputbuf);
+				transclude_source(inputbuf, folder, NULL, output_format, manifest);
 				free(temp);
 				// free(folder);
 			}
 
-			out = markdown_to_string(inputbuf->str,  extensions, output_format);
-			
-			g_string_free(inputbuf, true);
+			/* list transclude manifest */
+			if (list_transclude_manifest) {
+				fprintf(stdout, "%s\n", manifest->str);
+				g_string_free(inputbuf, true);
+				g_string_free(manifest, true);
+				return(EXIT_SUCCESS);
+			} else {
+				g_string_free(manifest, true);
+			}
+
+			if (output_format == ORIGINAL_FORMAT) {
+				/* We want the source, don't parse */
+				out = (inputbuf->str);
+				g_string_free(inputbuf, FALSE);
+			} else {
+				out = markdown_to_string(inputbuf->str,  extensions, output_format);
+				g_string_free(inputbuf, true);
+			}
 			
 			/* set up for output */
 			temp = argv[i+1];	/* get current filename */
@@ -359,6 +386,8 @@ int main(int argc, char **argv)
 				g_string_append(filename,".lyx");
 			} else if (output_format == RTF_FORMAT) {
 				g_string_append(filename,".rtf");
+			} else if (output_format == ORIGINAL_FORMAT) {
+				g_string_append(filename,".mmd_out");
 			} else {
 				/* default extension -- in this case we only have 1 */
 				g_string_append(filename,".txt");
@@ -381,6 +410,7 @@ int main(int argc, char **argv)
 		inputbuf = g_string_new("");
 		char *folder = NULL;
 		char *temp = NULL;
+		GString *manifest = g_string_new("");
 
 		folder = getcwd(0,0);
 
@@ -412,8 +442,9 @@ int main(int argc, char **argv)
 		}
 		
 		if (!(extensions & EXT_COMPATIBILITY)) {
-			append_mmd_footers(inputbuf);
-			transclude_source(inputbuf, folder, NULL, output_format);
+			prepend_mmd_header(inputbuf);
+			append_mmd_footer(inputbuf);
+			transclude_source(inputbuf, folder, NULL, output_format, manifest);
 		}
 
 		free(temp);
@@ -444,9 +475,24 @@ int main(int argc, char **argv)
 			return(EXIT_SUCCESS);
 		}
 
-		out = markdown_to_string(inputbuf->str, extensions, output_format);
-		
-		g_string_free(inputbuf, true);
+		/* list transclude manifest */
+		if (list_transclude_manifest) {
+			fprintf(stdout, "%s\n", manifest->str);
+			g_string_free(inputbuf, true);
+			g_string_free(manifest, true);
+			return(EXIT_SUCCESS);
+		} else {
+			g_string_free(manifest, true);			
+		}
+
+		if (output_format == ORIGINAL_FORMAT) {
+			/* We want the source, don't parse */
+			out = (inputbuf->str);
+			g_string_free(inputbuf, FALSE);
+		} else {
+			out = markdown_to_string(inputbuf->str,  extensions, output_format);
+			g_string_free(inputbuf, true);
+		}
 		
 		/* did we specify an output filename; "-" equals stdout */
 		if ((filename == NULL) || (strcmp(filename->str, "-") == 0)) {

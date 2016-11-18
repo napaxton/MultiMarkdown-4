@@ -3,7 +3,7 @@
 	writer.c -- General routines for converting parse structure to various 
 		output formats.
 
-	(c) 2013 Fletcher T. Penney (http://fletcherpenney.net/).
+	(c) 2013-2015 Fletcher T. Penney (http://fletcherpenney.net/).
 
 	Derived from peg-multimarkdown, which was forked from peg-markdown,
 	which is (c) 2008 John MacFarlane (jgm at berkeley dot edu), and 
@@ -25,6 +25,7 @@
 /* export_node_tree -- given a tree, export as specified format */
 char * export_node_tree(node *list, int format, unsigned long extensions) {
 	char *output;
+	char *temp;
 	GString *out = g_string_new("");
 	scratch_pad *scratch = mk_scratch_pad(extensions);
 	scratch->result_tree = list;  /* Pointer to result tree to use later */
@@ -60,8 +61,15 @@ char * export_node_tree(node *list, int format, unsigned long extensions) {
 			break;
 		case HTML_FORMAT:
 			if (scratch->extensions & EXT_COMPLETE) {
-			    g_string_append_printf(out,
-				"<!DOCTYPE html>\n<html>\n<head>\n\t<meta charset=\"utf-8\"/>\n");
+				temp = metavalue_for_key("lang", scratch->result_tree);
+				if (temp != NULL) {
+				    g_string_append_printf(out,
+					"<!DOCTYPE html>\n<html lang=\"%s\">\n<head>\n\t<meta charset=\"utf-8\"/>\n",temp);
+					free(temp);
+				} else {
+				    g_string_append_printf(out,
+					"<!DOCTYPE html>\n<html>\n<head>\n\t<meta charset=\"utf-8\"/>\n");
+				}
 			}
 #ifdef DEBUG_ON
 	fprintf(stderr, "print_html output\n");
@@ -138,6 +146,10 @@ char * export_node_tree(node *list, int format, unsigned long extensions) {
 		case CRITIC_HTML_HIGHLIGHT_FORMAT:
 			print_critic_html_highlight_node_tree(out, list, scratch);
 			break;
+		case TOC_FORMAT:
+			scratch->toc_level = 0;
+			print_toc_node_tree(out,list,scratch);
+			break;
 		default:
 			fprintf(stderr, "Unknown export format = %d\n",format);
 			exit(EXIT_FAILURE);
@@ -158,18 +170,23 @@ char * export_node_tree(node *list, int format, unsigned long extensions) {
    Copy them from main parse tree */
 void extract_references(node *list, scratch_pad *scratch) {
 	node *temp;
+	char * temp_str;
 	link_data *l;
 	
 	while (list != NULL) {
 		switch (list->key) {
 			case LINKREFERENCE:
 				l = list->link_data;
-				temp = mk_link(list->children, l->label, l->source, l->title, NULL);
+				temp_str = lower_string(l->label);
+
+				temp = mk_link(list->children, temp_str, l->source, l->title, NULL);
 				temp->link_data->attr = copy_node_tree(l->attr);
 
 				/* store copy of link reference */
 				scratch->links = cons(temp, scratch->links);
 				
+				free(temp_str);
+
 				break;
 			case NOTESOURCE:
 			case GLOSSARYSOURCE:
@@ -308,6 +325,12 @@ void find_abbreviations(node *list, scratch_pad *scratch) {
 			case GLOSSARYSOURCE:
 			case BLOCKQUOTEMARKER:
 			case BLOCKQUOTE:
+			case STRONG:
+			case EMPH:
+			case TABLE:
+			case TABLEBODY:
+			case TABLEROW:
+			case TABLECELL:
 				/* Check children of these elements */
 				find_abbreviations(list->children, scratch);
 				break;
@@ -323,6 +346,7 @@ void find_abbreviations(node *list, scratch_pad *scratch) {
 /* extract_link_data -- given a label, parse the link data and return */
 link_data * extract_link_data(char *label, scratch_pad *scratch) {
 	char *temp;
+	char *temp2;
 	link_data *d;
 	node *ref = scratch->links;
 	bool debug = 0;
@@ -333,7 +357,8 @@ link_data * extract_link_data(char *label, scratch_pad *scratch) {
 	if ((label == NULL) || (strlen(label) == 0))
 		return NULL;
 	
-	temp = clean_string(label);
+	temp2 = clean_string(label);
+	temp = lower_string(temp2);
 	
 	/* look for label string as is */
 	while (ref != NULL) {
@@ -348,7 +373,10 @@ link_data * extract_link_data(char *label, scratch_pad *scratch) {
 			/* matched */
 			d = ref->link_data;
 			d = mk_link_data(d->label, d->source, d->title, d->attr);
+
 			free(temp);
+			free(temp2);
+			
 			return d;
 		} else {
 			if (debug)
@@ -356,7 +384,9 @@ link_data * extract_link_data(char *label, scratch_pad *scratch) {
 		}
 		ref = ref->next;
 	}
+
 	free(temp);
+	free(temp2);
 	
 	/* No match.  Check for label()version */
 	
@@ -380,7 +410,9 @@ link_data * extract_link_data(char *label, scratch_pad *scratch) {
 			/* matched */
 			d = ref->link_data;
 			d = mk_link_data(d->label, d->source, d->title, d->attr);
+			
 			free(temp);
+
 			return d;
 		} else {
 			if (debug)
@@ -388,8 +420,9 @@ link_data * extract_link_data(char *label, scratch_pad *scratch) {
 		}
 		ref = ref->next;
 	}
-	free(temp);
 
+	free(temp);
+	
 	if (debug)
 		fprintf(stderr, "finish extract\n");
 	return NULL;

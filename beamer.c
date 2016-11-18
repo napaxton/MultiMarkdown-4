@@ -2,7 +2,7 @@
 
 	beamer.c -- Beamer add-on to LaTeX writer
 
-	(c) 2013 Fletcher T. Penney (http://fletcherpenney.net/).
+	(c) 2013-2015 Fletcher T. Penney (http://fletcherpenney.net/).
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License or the MIT
@@ -63,7 +63,8 @@ void print_beamer_node(GString *out, node *n, scratch_pad *scratch) {
 				pad(out, 2, scratch);
 				g_string_append_printf(out, "\\begin{frame}");
 				/* TODO: Fix this */
-				if (tree_contains_key(n->children,VERBATIM)) {
+				if (tree_contains_key(n->children,VERBATIM) ||
+				    tree_contains_key(n->children,VERBATIMFENCE)) {
 					g_string_append_printf(out, "[fragile]");
 				}
 				scratch->padded = 0;

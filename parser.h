@@ -14,10 +14,10 @@
 
 #define TABSTOP 4
 
-#define MMD_VERSION "4.6"
+#define MMD_VERSION "4.7.1"
 
 #define MMD_COPYRIGHT \
-	"Copyright (c) 2013-2014 Fletcher T. Penney.\n\n" \
+	"Copyright (c) 2013-2015 Fletcher T. Penney.\n\n" \
 	"LyX export code (c) 2013-2014 Charles R. Cowan,\n" \
 	"licensed under both GPL and MIT licenses.\n\n" \
 	"portions based on peg-markdown - Copyright (c) 2008-2009 John MacFarlane.\n" \
@@ -35,8 +35,8 @@
 
 /* This is the data we store in the parser context */
 typedef struct {
-	char *charbuf;              /* Input buffer */
-	char *original;             /* Original input buffer */
+	const char *charbuf;        /* Input buffer */
+	const char *original;       /* Original input buffer */
 	node *result;               /* Resulting parse tree */
 	unsigned long extensions;   /* Extension bitfield */
 	node *autolabels;           /* Store for later retrieval */
@@ -53,6 +53,7 @@ typedef struct {
 	int   language;              /* For smart quotes */
 	char *table_alignment;       /* Hold the alignment string while parsing table */
 	int   table_column;          /* Track the current column number */
+	bool  inside_footnote;       /* Are we inside a footnote? */
 	char  cell_type;             /* What sort of cell type are we in? */
 	bool  printing_notes;        /* Are we printing notes/glossary/etc.? */
 	node *notes;                 /* Store reference notes */
@@ -71,6 +72,7 @@ typedef struct {
 	int   odf_para_type;         /* what type of paragraph do we need? */
 	bool  odf_list_needs_end_p;  /* is there a <p> that need to be closed */
 	int   random_seed_base;      /* Allow random footnotes */
+	int   toc_level;             /* Track depth for TOC */
 	int   table_row;             /* CRC - Track the current row number */
 	int   lyx_para_type;         /* CRC - the type of paragraph being processed */
 	int   lyx_level;             /* CRC - nesting level */
@@ -135,10 +137,10 @@ void   append_list(node *new, node *list);
 node    * mk_str_from_list(node *list, bool extra_newline);
 GString * concat_string_list(node *list);
 
-parser_data * mk_parser_data(char *charbuf, unsigned long extensions);
+parser_data * mk_parser_data(const char *charbuf, unsigned long extensions);
 void   free_parser_data(parser_data *data);
 
-char * preformat_text(char *text);
+char * preformat_text(const char *text);
 
 scratch_pad * mk_scratch_pad(unsigned long extensions);
 void   free_scratch_pad(scratch_pad *scratch);
@@ -158,6 +160,7 @@ void   trim_trailing_whitespace(char *str);
 void   trim_trailing_newlines(char *str);
 
 /* other utilities */
+char * lower_string(char *str);
 char * label_from_string(char *str);
 char * ascii_label_from_string(char *str);
 char * clean_string(char *str);
@@ -177,9 +180,13 @@ char * metavalue_for_key(char *key, node *list);
 bool tree_contains_key(node *list, int key);
 int tree_contains_key_count(node *list, int key);
 
+node * markdown_chunk_to_node(const char * source, unsigned long extensions);
+
 bool check_timeout();
 
 void debug_node(node *n);
 void debug_node_tree(node *n);
+
+char * my_strndup(const char * source, size_t n);
 
 #endif

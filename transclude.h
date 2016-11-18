@@ -23,5 +23,6 @@
 #include "GLibFacade.h"
 
 char *	source_without_metadata(char * source, unsigned long extensions);
-void	transclude_source(GString *source, char *basedir, char *stack, int format);
-void append_mmd_footers(GString *source);
+void	transclude_source(GString *source, char *basedir, char *stack, int format, GString *manifest);
+void	append_mmd_footer(GString *source);
+void	prepend_mmd_header(GString *source);

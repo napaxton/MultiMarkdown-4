@@ -3,7 +3,7 @@
 	test.c -- plain text writer function as an example.
 		Recreates the input source.
 
-	(c) 2013 Fletcher T. Penney (http://fletcherpenney.net/).
+	(c) 2013-2015 Fletcher T. Penney (http://fletcherpenney.net/).
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License or the MIT
@@ -13,6 +13,9 @@
 	but WITHOUT ANY WARRANTY; without even the implied warranty of
 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 	GNU General Public License for more details.
+
+
+	WARNING -- Not complete and not intended for use
 
 */
 

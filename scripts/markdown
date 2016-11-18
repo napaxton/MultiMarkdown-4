@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# mmd2odf --- MultiMarkdown convenience script
+# markdown --- MultiMarkdown convenience script
 #	<http://fletcherpenney.net/multimarkdown/>
 #	Fletcher T. Penney
 #
-# Pass arguments on to the binary to convert text to OpenDocument
+# Pass arguments on to the binary to convert text to XHTML
 #
 
 # Be sure to include multimarkdown in our PATH
@@ -19,11 +19,11 @@ fi
 
 if [ $# = 0 ]
 then
-	multimarkdown -t odf
+	multimarkdown -c
 else
 until [ "$*" = "" ]
 do
-	multimarkdown -b -t odf "$1"
+	multimarkdown -c -b "$1"
 	shift
 done
 fi

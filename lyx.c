@@ -1430,7 +1430,7 @@ void print_lyx_node(GString *out, node *n, scratch_pad *scratch, bool no_newline
 			if (temp == NULL) {
 				g_string_append_printf(out, "[%%%s]",n->str);
 			} else {
-				g_string_append_printf(out, temp);
+				print_lyx_string(out, temp, scratch, LYX_NONE);
 				free(temp);
 			}
 			break;
@@ -1729,6 +1729,9 @@ void print_lyx_node(GString *out, node *n, scratch_pad *scratch, bool no_newline
 			g_string_append_printf(out, "\n\\begin_inset script subscript\n\n\\begin_layout Plain Layout\n%s\n\\end_layout\n\n\\end_inset\n",n->str);
 			break;
 		case KEY_COUNTER:
+			break;
+		case TOC:
+			print_lyx_node_tree(out,n->children, scratch, false);
 			break;
 		default:
 			fprintf(stderr, "print_lyx_node encountered unknown node key = %d\n",n->key);
